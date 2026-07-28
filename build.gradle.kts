@@ -31,7 +31,7 @@ dependencies {
 }
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
     compilerOptions {
         freeCompilerArgs.add("-Xskip-metadata-version-check")
     }
@@ -40,7 +40,7 @@ kotlin {
 tasks {
     patchPluginXml {
         sinceBuild.set("253")
-        untilBuild.set("253.*")
+        untilBuild.set("261.*")
     }
     buildSearchableOptions {
         enabled = false

@@ -4,15 +4,21 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.extensions.ExtensionPointName
 import com.intellij.openapi.project.Project
+import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
-import io.modelcontextprotocol.kotlin.sdk.CallToolResult
-import io.modelcontextprotocol.kotlin.sdk.Implementation
-import io.modelcontextprotocol.kotlin.sdk.ServerCapabilities
-import io.modelcontextprotocol.kotlin.sdk.TextContent
+import io.ktor.server.routing.route
+import io.ktor.server.routing.routing
+import io.ktor.server.sse.SSE
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
+import io.modelcontextprotocol.kotlin.sdk.server.mcp
+import io.modelcontextprotocol.kotlin.sdk.types.CallToolResult
+import io.modelcontextprotocol.kotlin.sdk.types.Implementation
+import io.modelcontextprotocol.kotlin.sdk.types.ServerCapabilities
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
+import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,7 +35,6 @@ import kotlinx.serialization.json.put
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
 import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
-import io.modelcontextprotocol.kotlin.sdk.Tool as McpTool
 
 /**
  * Discovers Android Studio's Gemini agent tools via extension points
@@ -182,7 +187,7 @@ class McpBridgeService(private val project: Project) : Disposable {
         server.addTool(
             name = "_refresh_tools",
             description = "Re-discovers tools from Android Studio. Call this if tools seem missing.",
-            inputSchema = McpTool.Input(properties = buildJsonObject {}, required = emptyList()),
+            inputSchema = ToolSchema(properties = buildJsonObject {}, required = emptyList()),
         ) { _ ->
             refreshTools()
             rebuildTools(server)
@@ -194,6 +199,10 @@ class McpBridgeService(private val project: Project) : Disposable {
     }
 
     private fun rebuildTools(server: Server) {
+        // Drop tools that vanished since the last pass; addTool overwrites the rest.
+        val current = cachedTools.mapTo(mutableSetOf()) { it.name }
+        server.removeTools(server.tools.keys.filter { it != "_refresh_tools" && it !in current })
+
         for (tool in cachedTools) {
             val props = buildJsonObject {
                 for ((argName, arg) in tool.arguments) {
@@ -213,11 +222,11 @@ class McpBridgeService(private val project: Project) : Disposable {
             server.addTool(
                 name = tool.name,
                 description = tool.description,
-                inputSchema = McpTool.Input(
+                inputSchema = ToolSchema(
                     properties = props,
                     required = tool.arguments.keys.toList()
                 ),
-            ) { request -> handleToolCall(tool, request.arguments) }
+            ) { request -> handleToolCall(tool, request.arguments ?: JsonObject(emptyMap())) }
         }
     }
 
@@ -460,20 +469,31 @@ class McpBridgeService(private val project: Project) : Disposable {
 
     // ---- SSE transport -----------------------------------------------------
 
+    /**
+     * Mounts the MCP server under /sse.
+     *
+     * `Application.mcp {}` would mount at the root instead, so the route is declared
+     * explicitly to keep the documented http://localhost:PORT/sse endpoint stable.
+     * Both the SSE stream (GET) and the JSON-RPC messages (POST) live on that path —
+     * the SDK advertises the message endpoint as a relative "?sessionId=..." URI that
+     * clients resolve against the SSE URL.
+     */
     private suspend fun startSseTransport(mcpServer: Server, port: Int) {
         val engine = embeddedServer(CIO, port = port) {
-            val ktorServerClass =
-                Class.forName("io.modelcontextprotocol.kotlin.sdk.server.KtorServerKt")
-            val mcpMethod = ktorServerClass.methods.first { m ->
-                m.name == "mcp" && m.parameterTypes.firstOrNull()?.name?.contains("Application") == true
+            install(SSE)
+            routing {
+                route(SSE_PATH) {
+                    mcp { mcpServer }
+                }
             }
-            mcpMethod.invoke(null, this, { _: Any? -> mcpServer } as (Any?) -> Server)
         }
         ktorEngine = engine
         withContext(Dispatchers.IO) { engine.start(wait = false) }
     }
 
     companion object {
+        private const val SSE_PATH = "/sse"
+
         fun getInstance(project: Project): McpBridgeService =
             project.getService(McpBridgeService::class.java)
 
@@ -487,7 +507,9 @@ class McpBridgeService(private val project: Project) : Disposable {
             "get_artifact_consumers", "get_build_file_location",
             "get_test_task_for_artifact", "get_top_level_sub_projects",
             "get_test_artifacts_for_sub_project", "get_source_folders_for_artifact",
-            // Compose
+            // Compose. As of build 261 this only exists on the newer
+            // com.google.studiobot.agentsdk.toolsProvider extension point, so it is not
+            // discovered there; kept here for older builds that still expose it on V1.
             "render_compose_preview",
             // Android docs & code search
             "code_search", "search_android_docs", "fetch_android_docs",

@@ -20,16 +20,20 @@ import os
 import signal
 import sys
 import threading
+from urllib.parse import urljoin
+
+SSE_PATH = "/sse"
 
 
 def sse_reader(host, port, endpoint_ready, endpoint_holder, shutdown):
     """Read the SSE stream, extract the session endpoint, and forward JSON-RPC responses to stdout."""
     try:
         conn = http.client.HTTPConnection(host, port, timeout=None)
-        conn.request("GET", "/sse", headers={"Accept": "text/event-stream"})
+        conn.request("GET", SSE_PATH, headers={"Accept": "text/event-stream"})
         resp = conn.getresponse()
 
         buf = b""
+        event = None
         while not shutdown.is_set():
             chunk = resp.read(1)
             if not chunk:
@@ -41,13 +45,25 @@ def sse_reader(host, port, endpoint_ready, endpoint_holder, shutdown):
             line = buf.decode("utf-8", errors="replace").rstrip("\r\n")
             buf = b""
 
+            if line.startswith("event: "):
+                event = line[7:].strip()
+                continue
+
+            if not line:
+                # Blank line terminates an event.
+                event = None
+                continue
+
             if not line.startswith("data: "):
                 continue
 
             data = line[6:]
 
-            if data.startswith("/message?sessionId="):
-                endpoint_holder.append(data)
+            # The server advertises the POST endpoint as a URI reference relative to
+            # the SSE URL. Older SDK builds sent an absolute "/message?sessionId=...";
+            # current ones send just "?sessionId=...". urljoin handles both.
+            if event == "endpoint" or data.startswith(("?sessionId=", "/message?sessionId=")):
+                endpoint_holder.append(urljoin(SSE_PATH, data))
                 endpoint_ready.set()
             else:
                 sys.stdout.write(data + "\n")

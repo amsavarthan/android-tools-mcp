@@ -38,17 +38,27 @@ The Python wrapper script converts stdio ↔ SSE so CLI-based MCP clients can co
 
 ### Tool discovery
 
-`McpBridgeService` uses reflection to query the `com.google.aiplugin.agentToolsProvider` extension point. It filters to 20 Android-specific tools across three categories:
+`McpBridgeService` uses reflection to query the `com.google.aiplugin.agentToolsProvider` extension point. It filters to Android-specific tools across three categories:
 
-- **Device** — `read_logcat`, `take_screenshot`, `ui_state`, `adb_shell_input`, `deploy`, `render_compose_preview`
+- **Device** — `read_logcat`, `take_screenshot`, `ui_state`, `adb_shell_input`, `deploy`
 - **Build / Gradle** — `gradle_sync`, `gradle_build`, `get_gradle_artifact_from_file`, `get_assemble_task_for_artifact`, `get_artifact_consumers`, `get_build_file_location`, `get_test_task_for_artifact`, `get_top_level_sub_projects`, `get_test_artifacts_for_sub_project`, `get_source_folders_for_artifact`
 - **Docs / Search** — `search_android_docs`, `fetch_android_docs`, `code_search`, `version_lookup`
 
 A special `_refresh_tools` meta-tool allows clients to trigger rediscovery at any time.
 
+The Gemini plugin now carries two parallel agent-tool APIs: the V1 extension point above
+(`com.google.aiplugin.agents.*`) and a newer V2 one (`com.google.studiobot.agentsdk.toolsProvider` /
+`com.google.studiobot.agentsdk.tools.*`). This bridge uses V1, which is still fully populated
+in build 261. The one casualty is `render_compose_preview`, which moved to V2-only — supporting
+it would mean driving the V2 `ToolHandler.run(MutableToolCallStep, Trajectory)` API.
+
 ### Transport
 
 MCP SDK server (bundled with the Gemini plugin) exposes tools over SSE via Ktor CIO on port **24601** (configurable via `-Dandroid.tools.mcp.port=PORT`). The `scripts/android-studio-mcp.py` Python wrapper translates stdio JSON-RPC to/from the SSE session endpoint.
+
+The route is mounted explicitly at `/sse` — `Application.mcp {}` from the SDK would mount at the
+root instead. The SSE stream (GET) and JSON-RPC messages (POST) share that path; the SDK advertises
+the message endpoint as a relative `?sessionId=…` URI, which clients resolve against the SSE URL.
 
 ### Key files
 
@@ -57,7 +67,7 @@ MCP SDK server (bundled with the Gemini plugin) exposes tools over SSE via Ktor 
 | `src/main/kotlin/.../McpBridgeService.kt` | Core service — discovery, MCP server, tool invocation, SSE transport |
 | `src/main/kotlin/.../McpBridgeStartupActivity.kt` | Startup hook — triggers service on project open |
 | `src/main/resources/META-INF/plugin.xml` | Plugin descriptor — IDs, dependencies, extension registrations |
-| `build.gradle.kts` | Build config — IntelliJ platform plugin, Kotlin 2.1.0, JDK 17 |
+| `build.gradle.kts` | Build config — IntelliJ platform plugin, Kotlin 2.1.0, JDK 21 |
 | `scripts/android-studio-mcp.py` | Cross-platform stdio ↔ SSE bridge (Python 3, stdlib only) |
 | `scripts/health-check.py` | Cross-platform diagnostic check for the SSE endpoint |
 
@@ -66,14 +76,22 @@ MCP SDK server (bundled with the Gemini plugin) exposes tools over SSE via Ktor 
 All dependencies come from the IntelliJ platform and the bundled Gemini plugin — there are no external Maven dependencies:
 
 - IntelliJ Platform APIs (`com.intellij.openapi.*`)
-- MCP Kotlin SDK (`io.modelcontextprotocol.kotlin.sdk.*`)
-- Ktor CIO (`io.ktor.server.*`)
+- MCP Kotlin SDK — protocol types live under `io.modelcontextprotocol.kotlin.sdk.types.*`, the
+  server under `io.modelcontextprotocol.kotlin.sdk.server.*` (shaded into the Gemini plugin's
+  `aiplugin.jar`; earlier builds put the types directly in `io.modelcontextprotocol.kotlin.sdk.*`)
+- Ktor CIO server (`io.ktor.server.*`) from the platform, plus the Ktor SSE plugin from the
+  Gemini plugin's `mcp-sdk-libraries.jar`
 - kotlinx.coroutines, kotlinx.serialization.json
 
 ### Target platform
 
 - **Since build:** 253 (Android Studio Ladybug Feature Drop 2025.3.3)
-- **Until build:** 253.*
+- **Until build:** 261.* (Android Studio 2026.1.2)
+
+Build 261 requires a **JDK 21 toolchain** — the Gemini plugin ships Java 21 bytecode, which a JDK 17
+toolchain cannot read. Bumping `untilBuild` is mandatory when a new Studio ships: an out-of-range
+`until-build` makes the IDE refuse to load the plugin outright, with no error beyond the plugin
+being absent.
 
 ## Commit Message Convention
 

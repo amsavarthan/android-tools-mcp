@@ -6,7 +6,7 @@ An Android Studio plugin that exposes the built-in Gemini agent tools as an [MCP
 > This plugin uses **undocumented internal APIs** from Android Studio's Gemini plugin. These APIs can change or break at any time without notice. It is **not affiliated with or endorsed by Google**. Use at your own risk — best suited for experimentation and personal workflows, not production CI pipelines.
 
 > [!NOTE]
-> Requires **Android Studio Panda 2025.3.+** with the Gemini plugin enabled (bundled by default) and **Python 3.7+** for the bridge script.
+> Requires **Android Studio 2025.3 – 2026.1** (build 253–261) with the Gemini plugin enabled (bundled by default) and **Python 3.7+** for the bridge script.
 
 ---
 
@@ -91,12 +91,12 @@ http://127.0.0.1:24601/sse
 
 ---
 
-## Available tools (20)
+## Available tools (19)
 
 All tools are Android-specific. Generic file/code tools are intentionally excluded. Tools are discovered dynamically from the Gemini plugin at runtime — when Android Studio updates with new tools, they appear automatically.
 
 <details>
-<summary><b>Device tools (6)</b></summary>
+<summary><b>Device tools (5)</b></summary>
 
 | Tool | Description |
 |------|-------------|
@@ -105,7 +105,6 @@ All tools are Android-specific. Generic file/code tools are intentionally exclud
 | `ui_state` | Dump the current UI hierarchy from a connected device |
 | `adb_shell_input` | Send input events to a connected device via `adb shell input` |
 | `deploy` | Build and deploy the app to a connected device |
-| `render_compose_preview` | Render a Compose preview and return the image |
 </details>
 
 <details>
@@ -156,6 +155,8 @@ cd android-tools-mcp
 ```
 
 The plugin ZIP is written to `build/distributions/`. The build compiles against your local Android Studio installation — set the path via `local.properties` (`android.studio.path=...`), env var `ANDROID_STUDIO_PATH`, or it defaults to `/Applications/Android Studio.app`.
+
+Requires a **JDK 21** toolchain (Android Studio's bundled JBR works: `JAVA_HOME="<Android Studio>/Contents/jbr/Contents/Home"`).
 
 ---
 

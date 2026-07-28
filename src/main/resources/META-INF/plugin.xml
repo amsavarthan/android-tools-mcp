@@ -4,7 +4,7 @@
     <vendor>Amsavarthan</vendor>
     <description>Exposes Android Studio's built-in Gemini agent tools as an MCP server for external AI coding tools</description>
 
-    <idea-version since-build="253" until-build="253.*"/>
+    <idea-version since-build="253" until-build="261.*"/>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.google.tools.ij.aiplugin</depends>
