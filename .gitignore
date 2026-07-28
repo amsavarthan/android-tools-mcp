@@ -6,3 +6,4 @@ out/
 local.properties
 .intellijPlatform/
 gradle/wrapper/gradle-wrapper.jar
+__pycache__/
