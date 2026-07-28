@@ -37,6 +37,8 @@ import kotlinx.serialization.json.put
 import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.lang.reflect.Proxy
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.Base64
 import java.util.UUID
 import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
@@ -286,13 +288,12 @@ class McpBridgeService(private val project: Project) : Disposable {
             val props = buildJsonObject {
                 for ((argName, arg) in tool.arguments) {
                     put(argName, buildJsonObject {
-                        val isListType =
-                            arg.typeName.contains("List") || arg.typeName.contains("Collection")
-                        if (isListType) {
-                            put("type", "array")
-                            put("items", buildJsonObject { put("type", "string") })
-                        } else {
-                            put("type", "string")
+                        val jsonType = jsonTypeOf(arg.typeName)
+                        put("type", jsonType)
+                        if (jsonType == "array") {
+                            put("items", buildJsonObject {
+                                put("type", jsonTypeOf(elementTypeOf(arg.typeName)))
+                            })
                         }
                         if (arg.description.isNotEmpty()) put("description", arg.description)
                     })
@@ -314,7 +315,7 @@ class McpBridgeService(private val project: Project) : Disposable {
         arguments: JsonObject
     ): CallToolResult {
         return try {
-            val args = toArgsMap(arguments)
+            val args = toArgsMap(tool, arguments)
             val result = when (tool.api) {
                 ToolApi.V1 -> invokeV1Tool(tool, args)
                 ToolApi.V2 -> invokeV2Tool(tool, args)
@@ -341,17 +342,63 @@ class McpBridgeService(private val project: Project) : Disposable {
         }
     }
 
-    private fun toArgsMap(arguments: JsonObject): Map<String, Any> =
+    /**
+     * Converts MCP arguments to the types the tool's `Args` class declares.
+     *
+     * Coercion is driven by the declared Kotlin type rather than the JSON shape, because clients
+     * routinely send numbers as strings; handing an `Int` parameter a `String` makes the tool
+     * reject the call.
+     */
+    private fun toArgsMap(tool: DiscoveredTool, arguments: JsonObject): Map<String, Any> =
         arguments.entries.associate { (k, v) ->
+            val declared = tool.arguments[k]?.typeName
             k to when (v) {
-                is JsonPrimitive -> v.content
-                is JsonArray -> v.map { elem ->
-                    (elem as? JsonPrimitive)?.content ?: elem.toString()
+                is JsonPrimitive -> coerce(v, declared)
+                is JsonArray -> {
+                    val elementType = declared?.let { elementTypeOf(it) }
+                    v.map { elem ->
+                        (elem as? JsonPrimitive)?.let { coerce(it, elementType) } ?: elem.toString()
+                    }
                 }
 
                 else -> v.toString()
             }
         }
+
+    private fun coerce(value: JsonPrimitive, typeName: String?): Any {
+        val text = value.content
+        return when (jsonTypeOf(typeName.orEmpty())) {
+            "integer" ->
+                if (typeName.orEmpty().contains("Long")) text.toLongOrNull() ?: text
+                else text.toIntOrNull() ?: text
+
+            "number" -> text.toDoubleOrNull() ?: text
+            "boolean" -> text.toBooleanStrictOrNull() ?: text
+            // No usable declared type: fall back to the JSON shape.
+            else -> if (typeName.isNullOrEmpty() && !value.isString) {
+                text.toLongOrNull() ?: text.toDoubleOrNull() ?: text.toBooleanStrictOrNull() ?: text
+            } else {
+                text
+            }
+        }
+    }
+
+    /** Maps a Kotlin type name (as `KType.toString()`) onto a JSON Schema type. */
+    private fun jsonTypeOf(typeName: String): String = when {
+        typeName.contains("List") || typeName.contains("Collection") || typeName.contains("Array") ->
+            "array"
+
+        typeName.contains("Int") || typeName.contains("Long") || typeName.contains("Short") ||
+            typeName.contains("Byte") -> "integer"
+
+        typeName.contains("Double") || typeName.contains("Float") -> "number"
+        typeName.contains("Boolean") -> "boolean"
+        else -> "string"
+    }
+
+    /** `kotlin.collections.List<kotlin.Int>` → `kotlin.Int`. */
+    private fun elementTypeOf(typeName: String): String =
+        typeName.substringAfter('<', "").substringBeforeLast('>', "")
 
     /** Reads the `data`/`mimeType` pair out of either API's Blob type. */
     private fun blobToImage(blob: Any): Pair<ByteArray, String>? {
@@ -551,6 +598,10 @@ class McpBridgeService(private val project: Project) : Disposable {
                 "getDocumentTracker" ->
                     proxyInterface("com.google.studiobot.agentsdk.io.AgentDocumentTracker")
 
+                // Must be real: tools that produce images (screenshots, rendered previews) build
+                // their Blob here, and a stub factory would silently drop the image.
+                "getBlobFactory" -> blobFactory(cl)
+
                 // Suspend functions: returning a value directly (rather than COROUTINE_SUSPENDED)
                 // is the "completed without suspending" protocol.
                 "isPermissionApproved" -> true
@@ -563,6 +614,29 @@ class McpBridgeService(private val project: Project) : Disposable {
                 else -> defaultForReturnType(method.returnType)
             }
         }
+    }
+
+    /**
+     * The Gemini plugin's own `BlobFactory`, pointed at a scratch directory.
+     *
+     * Tools that produce images build their `Blob` through this, and without a working factory
+     * the image is silently dropped. `Blob` is a sealed interface so it cannot be proxied —
+     * `DefaultBlobFactory` is the real implementation and only needs a storage location.
+     */
+    private fun blobFactory(cl: ClassLoader): Any? = runCatching {
+        Class.forName("com.google.studiobot.agentsdk.conversations.DefaultBlobFactory", true, cl)
+            .declaredConstructors
+            .first { it.parameterCount == 1 }
+            .also { it.isAccessible = true }
+            .newInstance(blobStorageDir)
+    }.getOrElse { e ->
+        log.warn("Failed to create BlobFactory; image-producing tools will return text only", e)
+        null
+    }
+
+    private val blobStorageDir: Path by lazy {
+        Files.createTempDirectory("android-tools-mcp-blobs")
+            .also { it.toFile().deleteOnExit() }
     }
 
     private fun enumConstant(cl: ClassLoader, className: String, name: String): Any? =

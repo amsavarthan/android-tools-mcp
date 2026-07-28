@@ -32,42 +32,44 @@ def sse_reader(host, port, endpoint_ready, endpoint_holder, shutdown):
         conn.request("GET", SSE_PATH, headers={"Accept": "text/event-stream"})
         resp = conn.getresponse()
 
+        # Read in chunks rather than a byte at a time: image-returning tools (screenshots,
+        # rendered previews) send multi-megabyte base64 payloads on a single data line, and
+        # per-byte reads make those take minutes.
         buf = b""
         event = None
         while not shutdown.is_set():
-            chunk = resp.read(1)
+            chunk = resp.read1(65536) if hasattr(resp, "read1") else resp.read(65536)
             if not chunk:
                 break
             buf += chunk
-            if chunk != b"\n":
-                continue
 
-            line = buf.decode("utf-8", errors="replace").rstrip("\r\n")
-            buf = b""
+            while b"\n" in buf:
+                raw, buf = buf.split(b"\n", 1)
+                line = raw.decode("utf-8", errors="replace").rstrip("\r")
 
-            if line.startswith("event: "):
-                event = line[7:].strip()
-                continue
+                if line.startswith("event: "):
+                    event = line[7:].strip()
+                    continue
 
-            if not line:
-                # Blank line terminates an event.
-                event = None
-                continue
+                if not line:
+                    # Blank line terminates an event.
+                    event = None
+                    continue
 
-            if not line.startswith("data: "):
-                continue
+                if not line.startswith("data: "):
+                    continue
 
-            data = line[6:]
+                data = line[6:]
 
-            # The server advertises the POST endpoint as a URI reference relative to
-            # the SSE URL. Older SDK builds sent an absolute "/message?sessionId=...";
-            # current ones send just "?sessionId=...". urljoin handles both.
-            if event == "endpoint" or data.startswith(("?sessionId=", "/message?sessionId=")):
-                endpoint_holder.append(urljoin(SSE_PATH, data))
-                endpoint_ready.set()
-            else:
-                sys.stdout.write(data + "\n")
-                sys.stdout.flush()
+                # The server advertises the POST endpoint as a URI reference relative to
+                # the SSE URL. Older SDK builds sent an absolute "/message?sessionId=...";
+                # current ones send just "?sessionId=...". urljoin handles both.
+                if event == "endpoint" or data.startswith(("?sessionId=", "/message?sessionId=")):
+                    endpoint_holder.append(urljoin(SSE_PATH, data))
+                    endpoint_ready.set()
+                else:
+                    sys.stdout.write(data + "\n")
+                    sys.stdout.flush()
     except Exception as e:
         if not shutdown.is_set():
             sys.stderr.write(f"SSE connection error: {e}\n")
