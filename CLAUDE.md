@@ -38,19 +38,23 @@ The Python wrapper script converts stdio ↔ SSE so CLI-based MCP clients can co
 
 ### Tool discovery
 
-`McpBridgeService` uses reflection to query the `com.google.aiplugin.agentToolsProvider` extension point. It filters to Android-specific tools across three categories:
+`McpBridgeService` queries **both** of the Gemini plugin's parallel agent-tool extension points and merges the results, preferring V2 where a tool name appears on both:
 
-- **Device** — `read_logcat`, `take_screenshot`, `ui_state`, `adb_shell_input`, `deploy`
-- **Build / Gradle** — `gradle_sync`, `gradle_build`, `get_gradle_artifact_from_file`, `get_assemble_task_for_artifact`, `get_artifact_consumers`, `get_build_file_location`, `get_test_task_for_artifact`, `get_top_level_sub_projects`, `get_test_artifacts_for_sub_project`, `get_source_folders_for_artifact`
-- **Docs / Search** — `search_android_docs`, `fetch_android_docs`, `code_search`, `version_lookup`
+| | V1 | V2 |
+|---|---|---|
+| Extension point | `com.google.aiplugin.agentToolsProvider` | `com.google.studiobot.agentsdk.toolsProvider` |
+| Package | `com.google.aiplugin.agents` | `com.google.studiobot.agentsdk` |
+| Enumeration | `getToolSets(Project)` | `getInstance(Project, ToolSetId)` per enum value — there is no bulk accessor |
+| Invocation | `createToolHandler(ToolContext, Content.FunctionCall)` then `handle()` returns a `Response` | `createToolHandler(ToolContext, Map)` then `run(MutableToolCallStep, Trajectory)` writes the `Response` into the step |
+| Status | Legacy — every implementation is `…V1`-suffixed | Current, and the only place newer tools land |
+
+V2's `ToolContext`, `MutableToolCallStep`, and `Trajectory` are all interfaces, so they are supplied as dynamic proxies; the step proxy records the `Response` the handler writes into it. V1 is kept because it is the only API on older builds and still uniquely provides `ui_state`.
+
+Discovery is filtered to Android-specific tools (30 as of build 261) across five categories — device, build/Gradle, Compose/UI, Android resources, and docs/search. Generic file, code, and agent-workflow tools are excluded even though discovery sees them; set the logger to DEBUG to log the unfiltered lists.
+
+Tool output carrying image blobs (screenshots, rendered previews) is returned as MCP `ImageContent`.
 
 A special `_refresh_tools` meta-tool allows clients to trigger rediscovery at any time.
-
-The Gemini plugin now carries two parallel agent-tool APIs: the V1 extension point above
-(`com.google.aiplugin.agents.*`) and a newer V2 one (`com.google.studiobot.agentsdk.toolsProvider` /
-`com.google.studiobot.agentsdk.tools.*`). This bridge uses V1, which is still fully populated
-in build 261. The one casualty is `render_compose_preview`, which moved to V2-only — supporting
-it would mean driving the V2 `ToolHandler.run(MutableToolCallStep, Trajectory)` API.
 
 ### Transport
 

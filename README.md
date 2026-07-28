@@ -91,9 +91,11 @@ http://127.0.0.1:24601/sse
 
 ---
 
-## Available tools (19)
+## Available tools (30)
 
-All tools are Android-specific. Generic file/code tools are intentionally excluded. Tools are discovered dynamically from the Gemini plugin at runtime — when Android Studio updates with new tools, they appear automatically.
+All tools are Android-specific. Generic file/code and agent-workflow tools are intentionally excluded. Tools are discovered dynamically from the Gemini plugin at runtime — when Android Studio updates with new tools, they appear automatically.
+
+Tools that return images (screenshots, rendered previews) are delivered as MCP image content.
 
 <details>
 <summary><b>Device tools (5)</b></summary>
@@ -104,16 +106,21 @@ All tools are Android-specific. Generic file/code tools are intentionally exclud
 | `take_screenshot` | Capture a screenshot from a connected device |
 | `ui_state` | Dump the current UI hierarchy from a connected device |
 | `adb_shell_input` | Send input events to a connected device via `adb shell input` |
-| `deploy` | Build and deploy the app to a connected device |
+| `adb_pull` | Pull a file off a connected device |
 </details>
 
 <details>
-<summary><b>Gradle tools (10)</b></summary>
+<summary><b>Build &amp; Gradle tools (15)</b></summary>
 
 | Tool | Description |
 |------|-------------|
 | `gradle_sync` | Trigger a Gradle sync in the open project |
 | `gradle_build` | Build the project via Gradle |
+| `gradle_assemble_all` | Assemble every artifact in the build |
+| `deploy` | Build and deploy the app to a connected device |
+| `run_test_with_coverage` | Run tests with coverage collection |
+| `version_lookup` | Look up the latest stable and preview versions of a Maven artifact |
+| `release_notes` | Fetch release notes for a dependency version |
 | `get_top_level_sub_projects` | List top-level subprojects in the Gradle build |
 | `get_build_file_location` | Get the build file path for a given artifact |
 | `get_gradle_artifact_from_file` | Identify which Gradle artifact owns a source file |
@@ -125,14 +132,34 @@ All tools are Android-specific. Generic file/code tools are intentionally exclud
 </details>
 
 <details>
-<summary><b>Documentation & search tools (4)</b></summary>
+<summary><b>Compose &amp; UI tools (5)</b></summary>
+
+| Tool | Description |
+|------|-------------|
+| `render_compose_preview` | Render a Compose preview and return the image |
+| `compose_visual_comparison_judge` | Judge whether a rendered preview matches a target |
+| `verify_batch_visual_parity` | Check visual parity across a batch of previews |
+| `compare_images` | Compare two images and report the differences |
+| `visual_lint_service_tool` | Report visual lint issues for the current layout |
+</details>
+
+<details>
+<summary><b>Android resource tools (2)</b></summary>
+
+| Tool | Description |
+|------|-------------|
+| `locate_android_resources` | Locate the resources referenced by a layout XML file |
+| `resolve_resource` | Resolve an Android resource reference to its value |
+</details>
+
+<details>
+<summary><b>Documentation &amp; search tools (3)</b></summary>
 
 | Tool | Description |
 |------|-------------|
 | `search_android_docs` | Search the Android developer documentation |
 | `fetch_android_docs` | Fetch the content of an Android documentation page |
 | `code_search` | Search code within the open project |
-| `version_lookup` | Look up the latest stable and preview versions of a Maven artifact |
 </details>
 
 ---
