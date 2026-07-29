@@ -63,17 +63,34 @@ sed -i "" "s/^plugin\.version = .*/plugin.version = $VERSION/" gradle.properties
 # ---- Build ------------------------------------------------------------------
 
 echo "Building plugin..."
+# Clear stale artifacts: ZIPs from earlier releases linger here and must never
+# be picked up as this release's asset.
+rm -rf build/distributions
+
 if command -v jenv &>/dev/null; then
   jenv exec ./gradlew buildPlugin --quiet
 else
   ./gradlew buildPlugin --quiet
 fi
 
-ZIP=$(find build/distributions -name "*.zip" | head -1)
-if [[ -z "$ZIP" ]]; then
-  echo "Error: build succeeded but no ZIP found in build/distributions/" >&2
+# Match the ZIP by version rather than taking whatever find lists first.
+ZIP_COUNT=$(find build/distributions -maxdepth 1 -name "*-${VERSION}.zip" | wc -l | tr -d ' ')
+
+if [[ "$ZIP_COUNT" -eq 0 ]]; then
+  echo "Error: build succeeded but no ZIP matching *-${VERSION}.zip in build/distributions/" >&2
+  echo "Found instead:" >&2
+  find build/distributions -maxdepth 1 -name "*.zip" >&2 || true
   exit 1
 fi
+
+if [[ "$ZIP_COUNT" -gt 1 ]]; then
+  echo "Error: $ZIP_COUNT ZIPs match *-${VERSION}.zip; refusing to guess which to upload:" >&2
+  find build/distributions -maxdepth 1 -name "*-${VERSION}.zip" >&2
+  exit 1
+fi
+
+ZIP=$(find build/distributions -maxdepth 1 -name "*-${VERSION}.zip")
+echo "Built $ZIP"
 
 # ---- Commit + tag -----------------------------------------------------------
 
