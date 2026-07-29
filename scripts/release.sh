@@ -30,7 +30,7 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 if ! command -v jenv &>/dev/null; then
-  echo "Warning: jenv not found. Make sure JAVA_HOME points to JDK 17." >&2
+  echo "Warning: jenv not found. Make sure JAVA_HOME points to JDK 21." >&2
 fi
 
 if ! command -v gh &>/dev/null; then
