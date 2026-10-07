@@ -50,7 +50,7 @@ The Python wrapper script converts stdio ↔ SSE so CLI-based MCP clients can co
 
 V2's `ToolContext`, `MutableToolCallStep`, and `Trajectory` are all interfaces, so they are supplied as dynamic proxies; the step proxy records the `Response` the handler writes into it. V1 is kept because it is the only API on older builds and still uniquely provides `ui_state`.
 
-Discovery is filtered to Android-specific tools (30 as of build 261) across five categories — device, build/Gradle, Compose/UI, Android resources, and docs/search. Generic file, code, and agent-workflow tools are excluded even though discovery sees them; set the logger to DEBUG to log the unfiltered lists.
+Discovery is filtered to Android-specific tools (30 as of build 262) across five categories — device, build/Gradle, Compose/UI, Android resources, and docs/search. Generic file, code, and agent-workflow tools are excluded even though discovery sees them; set the logger to DEBUG to log the unfiltered lists.
 
 Tool output carrying image blobs (screenshots, rendered previews) is returned as MCP `ImageContent`.
 
@@ -71,7 +71,7 @@ the message endpoint as a relative `?sessionId=…` URI, which clients resolve a
 | `src/main/kotlin/.../McpBridgeService.kt` | Core service — discovery, MCP server, tool invocation, SSE transport |
 | `src/main/kotlin/.../McpBridgeStartupActivity.kt` | Startup hook — triggers service on project open |
 | `src/main/resources/META-INF/plugin.xml` | Plugin descriptor — IDs, dependencies, extension registrations |
-| `build.gradle.kts` | Build config — IntelliJ platform plugin, Kotlin 2.1.0, JDK 21 |
+| `build.gradle.kts` | Build config — IntelliJ platform plugin 2.19, Kotlin 2.4, Gradle 9.8, JDK 25 toolchain emitting Java 21 bytecode |
 | `scripts/android-studio-mcp.py` | Cross-platform stdio ↔ SSE bridge (Python 3, stdlib only) |
 | `scripts/health-check.py` | Cross-platform diagnostic check for the SSE endpoint |
 
@@ -90,12 +90,15 @@ All dependencies come from the IntelliJ platform and the bundled Gemini plugin �
 ### Target platform
 
 - **Since build:** 253 (Android Studio Ladybug Feature Drop 2025.3.3)
-- **Until build:** 261.* (Android Studio 2026.1.2)
+- **Until build:** 262.* (Android Studio 2026.2.1)
 
-Build 261 requires a **JDK 21 toolchain** — the Gemini plugin ships Java 21 bytecode, which a JDK 17
-toolchain cannot read. Bumping `untilBuild` is mandatory when a new Studio ships: an out-of-range
-`until-build` makes the IDE refuse to load the plugin outright, with no error beyond the plugin
-being absent.
+Build 262 requires a **JDK 25 toolchain** — its Gemini plugin ships Java 25 bytecode (and Studio
+bundles JBR 25), which needs Gradle 9.1+ and a Kotlin compiler that runs on JDK 25. The plugin
+still emits Java 21 bytecode (`jvmTarget` + `-Xjdk-release=21`) so it loads on 253–261; `jvmTarget`
+is set per compile task because the IntelliJ Platform plugin overrides the extension-level value.
+
+Bumping `untilBuild` is mandatory when a new Studio ships: an out-of-range `until-build` makes the IDE
+refuse to load the plugin outright, with no error beyond the plugin being absent.
 
 ## Commit Message Convention
 
