@@ -1,8 +1,10 @@
 package dev.amsavarthan.androidtoolsmcp
 
+import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.extensions.ExtensionPointName
+import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
 import io.ktor.server.application.install
 import io.ktor.server.cio.CIO
@@ -255,7 +257,7 @@ class McpBridgeService(private val project: Project) : Disposable {
 
     private fun buildMcpServer(): Server {
         val server = Server(
-            Implementation(name = "android-tools-mcp", version = "0.1.0"),
+            Implementation(name = "android-tools-mcp", version = pluginVersion()),
             ServerOptions(
                 capabilities = ServerCapabilities(
                     tools = ServerCapabilities.Tools(
@@ -831,6 +833,11 @@ class McpBridgeService(private val project: Project) : Disposable {
 
     companion object {
         private const val SSE_PATH = "/sse"
+        private const val PLUGIN_ID = "dev.amsavarthan.android-tools-mcp"
+
+        /** Version from the installed plugin descriptor, which Gradle patches from `plugin.version`. */
+        private fun pluginVersion(): String =
+            PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID))?.version ?: "unknown"
 
         fun getInstance(project: Project): McpBridgeService =
             project.getService(McpBridgeService::class.java)
